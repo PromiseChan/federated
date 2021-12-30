@@ -38,6 +38,9 @@ _SUPPORTED_TASKS = [
     'stackoverflow_nwp', 'movielens_mf', 'stackoverflow_nwp_finetune'
 ]
 
+# import pydevd_pycharm
+# pydevd_pycharm.settrace('115.193.169.189', port=7007, stdoutToServer=True, stderrToServer=True)
+
 with utils_impl.record_hparam_flags() as optimizer_flags:
   # Define optimizer flags.
   # define_optimizer_flags defines flags prefixed by its argument.
