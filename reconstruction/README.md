@@ -96,3 +96,23 @@ If building upon this library or paper, use the following bibtex:
       primaryClass={cs.LG}
 }
 ```
+
+
+## Linux Job
+1. background bazel job
+
+   ```shell
+   nohup bazel run shared:federated_trainer -- --task=stackoverflow_nwp --root_output_dir=/tmp/output --experiment_name=so_nwp --client_optimizer=sgd --client_learning_rate=0.3 \
+   --server_optimizer=yogi --server_learning_rate=0.1 --server_yogi_initial_accumulator_value=0.0 --server_yogi_beta2=0.99 --server_yogi_epsilon=0.001 --reconstruction_optimizer=sgd \
+   --reconstruction_learning_rate=0.1 --client_batch_size=16 --clients_per_round=10 --total_rounds=100 --rounds_per_eval=5 --rounds_per_checkpoint=5 --so_nwp_max_elements_per_user=200 \
+   --so_nwp_num_oov_buckets=10 --recon_epochs_max=5 --recon_steps_max=100 --post_recon_steps_max=100 --split_dataset=True &
+   ```
+
+   
+
+2. python debug 
+
+```python
+/environment/miniconda3/envs/fedtf/bin/python3 /home/featurize/.cache/bazel/_bazel_featurize/306d526753e42568a7e82342ec7e0d5f/execroot/org_federated_research/bazel-out/k8-opt/bin/reconstruction/shared/federated_trainer.runfiles/org_federated_research/reconstruction/shared/federated_trainer.py --task=stackoverflow_nwp --root_output_dir=/tmp/output --experiment_name=so_nwp --client_optimizer=sgd --client_learning_rate=0.3 --server_optimizer=yogi --server_learning_rate=0.1 --server_yogi_initial_accumulator_value=0.0 --server_yogi_beta2=0.99 --server_yogi_epsilon=0.001 --reconstruction_optimizer=sgd --reconstruction_learning_rate=0.1 --client_batch_size=16 --clients_per_round=10 --total_rounds=100 --rounds_per_eval=5 --rounds_per_checkpoint=5 --so_nwp_max_elements_per_user=200 --so_nwp_num_oov_buckets=10 --recon_epochs_max=5 --recon_steps_max=100 --post_recon_steps_max=100 --split_dataset=True
+```
+
