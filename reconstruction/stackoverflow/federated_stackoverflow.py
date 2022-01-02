@@ -203,6 +203,7 @@ def run_federated(
     # a float32 scalar.
     return tf.cast(tf.squeeze(local_outputs['num_tokens']), tf.float32)
 
+  # 定义单次clients-server的训练步骤
   iterative_process = iterative_process_builder(
       model_fn,
       loss_fn=loss_fn,
@@ -213,6 +214,7 @@ def run_federated(
           split_dataset_strategy=split_dataset_strategy,
           split_dataset_proportion=split_dataset_proportion))
 
+  # 添加验证训练步骤
   base_eval_computation = evaluation_computation_builder(
       model_fn,
       loss_fn=loss_fn,
@@ -222,6 +224,7 @@ def run_federated(
           split_dataset_strategy=split_dataset_strategy,
           split_dataset_proportion=split_dataset_proportion))
 
+  # 如果开启真的分布式并行模式（非默认）
   if compose_dataset_computation:
     # Compose dataset computations with client training and evaluation to avoid
     # linear cost of computing centrally. This changes the expected input of
@@ -255,6 +258,7 @@ def run_federated(
         validation_clientdata.client_ids, size=clients_per_round, replace=False)
     test_client_datasets_fn = federated_trainer_utils.build_list_sample_fn(
         test_clientdata.client_ids, size=clients_per_round, replace=False)
+  # 没有真的分布式训练环境（默认）
   else:
     training_process = iterative_process
     val_computation = base_eval_computation
@@ -282,6 +286,7 @@ def run_federated(
       client_datasets_fn=test_client_datasets_fn)
   test_fn = functools.partial(test_fn, round_num=0)
 
+  # 开始轮次迭代训练
   training_loop.run(
       iterative_process=training_process,
       client_datasets_fn=train_client_datasets_fn,
