@@ -26,6 +26,21 @@ from reconstruction.stackoverflow import stackoverflow_dataset
 from utils import training_loop
 from utils import training_utils
 from utils.datasets import stackoverflow_word_prediction
+import os
+from tensorflow_federated.python.simulation import hdf5_client_data
+
+
+def load_h5_data(cache_file=None):
+  path = cache_file
+  dir_path = os.path.dirname(path)
+  train_client_data = hdf5_client_data.HDF5ClientData(
+      os.path.join(dir_path, 'stackoverflow_train.h5'))
+  held_out_client_data = hdf5_client_data.HDF5ClientData(
+      os.path.join(dir_path, 'stackoverflow_held_out.h5'))
+  test_client_data = hdf5_client_data.HDF5ClientData(
+      os.path.join(dir_path, 'stackoverflow_test.h5'))
+  return train_client_data, held_out_client_data, test_client_data
+
 
 
 def run_federated(
@@ -120,15 +135,18 @@ def run_federated(
       supported arguments, see `training_loop.py`.
   """
 
+  # 构造交叉熵loss函数，用来 ？？？
   loss_fn = functools.partial(
       tf.keras.losses.SparseCategoricalCrossentropy, from_logits=True)
 
+  # 构造输入维度
   special_tokens = stackoverflow_word_prediction.get_special_tokens(
       vocab_size, num_oov_buckets)
   pad_token = special_tokens.pad
   oov_tokens = special_tokens.oov
   eos_token = special_tokens.eos
 
+  # 定义模型训练后的指标
   def metrics_fn():
     return [
         keras_metrics.MaskedCategoricalAccuracy(
@@ -143,10 +161,13 @@ def run_federated(
         keras_metrics.NumTokensCounter(masked_tokens=[pad_token])
     ]
 
+  # 加载数据集
   train_clientdata, validation_clientdata, test_clientdata = (
-      tff.simulation.datasets.stackoverflow.load_data())
+      load_h5_data(cache_file="/root/.keras/datasets/stackoverflow.tar.bz2"))
 
+  # 加载词汇表
   vocab = stackoverflow_word_prediction.create_vocab(vocab_size)
+  # 构造input 矩阵 ？？？
   dataset_preprocess_comp = stackoverflow_dataset.create_preprocess_fn(
       vocab=vocab,
       num_oov_buckets=num_oov_buckets,
@@ -155,9 +176,17 @@ def run_federated(
       max_elements_per_client=max_elements_per_user,
       feature_dtypes=train_clientdata.element_type_structure,
       sort_by_date=True)
-
+  # 构造input 矩阵 ？？？
   input_spec = dataset_preprocess_comp.type_signature.result.element
 
+  # 构造可重建的模型
+  # create_recurrent_reconstruction_model 的 global_layers -> keras_utils.from_keras_model
+  #     里面，定义了模型的结构
+  # 并且把模型的所有层上的参数，遍历分为两类：
+  # global_model_weights 和 local_model_weights
+  # global_model_weights 由：global_embedding_layer 参数、
+  #     lstm_0参数（内部有三层）、projection_0参数、last_layer参数组成
+  # local_model_weights 由：local_embedding 层参数组成
   model_fn = functools.partial(
       models.create_recurrent_reconstruction_model,
       vocab_size=vocab_size,
@@ -168,6 +197,7 @@ def run_federated(
       input_spec=input_spec,
       global_variables_only=global_variables_only)
 
+  # 客户端权重
   def client_weight_fn(local_outputs):
     # Num_tokens is a tensor with type int64[1], to use as a weight need
     # a float32 scalar.

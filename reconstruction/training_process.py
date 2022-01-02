@@ -58,6 +58,7 @@ from reconstruction import keras_utils
 from reconstruction import reconstruction_model
 from reconstruction import reconstruction_utils
 from utils import tensor_utils
+import pdb
 
 
 # Type aliases for readability.
@@ -324,11 +325,14 @@ def build_client_update_fn(
     def reconstruction_reduce_fn(num_examples_sum, batch):
       """Runs reconstruction training on local client batch."""
       with tf.GradientTape() as tape:
+        #   local 前向传播
         output = model.forward_pass(batch, training=True)
+        # 计算前向传播得到的预测值的损失
         batch_loss = batch_loss_fn(
             y_true=output.labels, y_pred=output.predictions)
-
+      # 根据损失得到梯度
       gradients = tape.gradient(batch_loss, local_model_weights.trainable)
+      # 根据梯度反向更新local权重
       reconstruction_optimizer.apply_gradients(
           zip(gradients, local_model_weights.trainable))
 
@@ -337,22 +341,28 @@ def build_client_update_fn(
         for metric in metrics:
           metric.update_state(y_true=output.labels, y_pred=output.predictions)
 
+      #  返回值暂时没用到
       return num_examples_sum + output.num_examples
 
     @tf.function
     def train_reduce_fn(num_examples_sum, batch):
       """Runs one step of client optimizer on local client batch."""
+      # 更新完整模型上的权重
       if jointly_train_variables:
         all_trainable_variables = (
             global_model_weights.trainable + local_model_weights.trainable)
       else:
         all_trainable_variables = global_model_weights.trainable
+
       with tf.GradientTape() as tape:
+        # 完整模型上用新数据集的再次前向传播
         output = model.forward_pass(batch, training=True)
+        # 完整模型上计算loss
         batch_loss = batch_loss_fn(
             y_true=output.labels, y_pred=output.predictions)
-
+      # 完整模型上计算梯度
       gradients = tape.gradient(batch_loss, all_trainable_variables)
+      # 完整模型上根据梯度，得到all_trainable_variables 更新后的权重值
       client_optimizer.apply_gradients(zip(gradients, all_trainable_variables))
 
       # Update each metric.
@@ -376,6 +386,8 @@ def build_client_update_fn(
     num_examples_sum = post_recon_dataset.reduce(
         initial_state=tf.constant(0), reduce_func=train_reduce_fn)
 
+    # 完成完整模型训练后的global_model_weights 减去 initial_weights
+    # 得到变化的initial_weights，发给server
     weights_delta = tf.nest.map_structure(lambda a, b: a - b,
                                           global_model_weights.trainable,
                                           initial_weights.trainable)
@@ -393,6 +405,9 @@ def build_client_update_fn(
     else:
       client_weight = client_weight_fn(model_local_outputs)
 
+    # 输出客户端完整模型的训练情况
+    # weights_delta：全局weight变化量
+    # client_weight：客户端自己的加权权重
     return reconstruction_utils.ClientOutput(weights_delta, client_weight,
                                              model_local_outputs)
 
@@ -421,13 +436,19 @@ def build_client_update_fn(
     # To be used to calculate batch loss for model updates.
     batch_loss_fn = loss_fn()
 
+    tf.config.experimental_run_functions_eagerly(True)
     return client_update(model, metrics, batch_loss_fn, tf_dataset,
                          initial_model_weights, client_optimizer,
                          reconstruction_optimizer, round_num)
+  #   **** client_delta_tf **** end
 
+  tf.config.experimental_run_functions_eagerly(True)
   return client_delta_tf
 
 
+  # run_one_round_tff 定义完成一轮server-client 训练的流程
+    # 服务端广播到选定的客户端子集, 让客户端本地训练，
+    # 然后服务端对上传来的weight进行聚合
 def build_run_one_round_fn(
     server_update_fn: TFComputationFn,
     client_update_fn: TFComputationFn,
@@ -467,16 +488,21 @@ def build_run_one_round_fn(
     client_model = tff.federated_broadcast(server_state.model)
     client_round_number = tff.federated_broadcast(server_state.round_num)
 
+    # 下发模型参数，获取客户端上传来的weight
     client_outputs = tff.federated_map(
         client_update_fn,
         (federated_dataset, client_model, client_round_number))
 
+    # aggregation_process 是工厂
+        # 在 _instantiate_aggregation_process 方法中定义
+    # 加权平均
     if len(aggregation_process.next.type_signature.parameter) == 3:
       # Weighted aggregation.
       aggregation_output = aggregation_process.next(
           server_state.aggregator_state,
           client_outputs.weights_delta,
           weight=client_outputs.client_weight)
+    #   无加权平均
     else:
       # Unweighted aggregation.
       aggregation_output = aggregation_process.next(
@@ -484,6 +510,7 @@ def build_run_one_round_fn(
 
     round_model_delta = aggregation_output.result
 
+    # 服务端开始更新自己的参数
     server_state = tff.federated_map(
         server_update_fn,
         (server_state, round_model_delta, aggregation_output.state))
@@ -647,7 +674,7 @@ def build_federated_reconstruction_process(
       loss_fn=loss_fn,
       metrics_fn=metrics_fn,
       tf_dataset_type=tf_dataset_type,
-      model_weights_type=server_state_type.model,
+      model_weights_type=server_state_type.model,  # 服务端的global_weight, 发给各个客户端
       client_optimizer_fn=client_optimizer_fn,
       reconstruction_optimizer_fn=reconstruction_optimizer_fn,
       dataset_split_fn=dataset_split_fn,
@@ -666,6 +693,9 @@ def build_federated_reconstruction_process(
   federated_output_computation = (
       keras_utils.federated_output_computation_from_metrics(metrics))
 
+  # run_one_round_tff 定义完成一轮server-client 训练的流程
+    # 服务端广播到选定的客户端子集, 让客户端本地训练，
+    # 然后服务端对上传来的weight进行聚合
   run_one_round_tff = build_run_one_round_fn(
       server_update_fn,
       client_update_fn,
@@ -675,6 +705,11 @@ def build_federated_reconstruction_process(
       aggregation_process=aggregation_process,
   )
 
+  # 定义整体流程
+  # server_init_tff 服务端初始化
+  # run_one_round_tff 定义完成一轮server-client 训练的流程
+    # 服务端广播到选定的客户端子集, 让客户端本地训练，
+    # 然后服务端对上传来的weight进行聚合
   iterative_process = tff.templates.IterativeProcess(
       initialize_fn=server_init_tff, next_fn=run_one_round_tff)
 

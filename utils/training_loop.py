@@ -202,8 +202,11 @@ def run(iterative_process: tff.templates.IterativeProcess,
 
   loop_start_time = time.time()
   loop_start_round = round_num
+  # server端 开始循环
   while round_num < total_rounds:
     data_prep_start_time = time.time()
+    # federated_train_data 是一个列表
+    # 保存了各个客户端上的数据集
     federated_train_data = client_datasets_fn(round_num)
     train_metrics = {
         'prepare_datasets_secs': time.time() - data_prep_start_time
@@ -225,6 +228,8 @@ def run(iterative_process: tff.templates.IterativeProcess,
                       type(e), round_num, e)
       continue  # restart the loop without incrementing the round number
 
+    # 更新server端的模型,默认使用fedavg 聚合
+    # get_model_weights 里面是获取客户端 发过来的部分权重,进行聚合操作
     current_model = iterative_process.get_model_weights(state)
     train_metrics['training_secs'] = time.time() - training_start_time
     train_metrics['model_delta_l2_norm'] = _compute_numpy_l2_difference(

@@ -1,22 +1,26 @@
-# Copyright 2020, Google LLC.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""Stackoverflow reconstruction models."""
-import collections
+import tensorflow_federated as tff
 import tensorflow as tf
+import collections
+import os
+from tensorflow_federated.python.simulation import hdf5_client_data
 
-from reconstruction import keras_utils
-from reconstruction import reconstruction_model
+# wrap it as a TFF computation
+# <=> foo = tff.tf_computation(lambda x: x > 10, tf.int32)
+@tff.tf_computation(tf.int32)
+def foo(x):
+  return x > 10
+
+
+# <=> foo = tff.tf_computation(lambda: tf.constant(10))
+@tff.tf_computation
+def foo():
+  return tf.constant(10)
+
+#  <=> foo = tff.tf_computation(lambda x, y: x > y)
+@tff.tf_computation
+def foo(x, y):
+  return x > y
+
 
 
 class GlobalEmbedding(tf.keras.layers.Layer):
@@ -116,36 +120,7 @@ def create_recurrent_reconstruction_model(
     input_spec=None,
     global_variables_only: bool = False,
     name: str = 'rnn_recon_embeddings',
-) -> reconstruction_model.ReconstructionModel:
-  """Creates a recurrent model with a partially reconstructed embedding layer.
-
-  Constructs a recurrent model for next word prediction, with the embedding
-  layer divided in two parts:
-    - A global_embedding, which shares its parameter updates with the server.
-    - A locally reconstructed local_embedding layer, reconstructed at the
-      beginning of every round, that never leaves the device. This local
-      embedding layer corresponds to the out of vocabulary buckets.
-
-  Args:
-    vocab_size: Size of vocabulary to use.
-    num_oov_buckets: Number of out of vocabulary buckets.
-    embedding_size: The size of the embedding.
-    latent_size: The size of the recurrent state.
-    num_layers: The number of layers.
-    input_spec: A structure of `tf.TensorSpec`s specifying the type of arguments
-      the model expects. Notice this must be a compound structure of two
-      elements, specifying both the data fed into the model to generate
-      predictions, as its first element, as well as the expected type of the
-      ground truth as its second.
-    global_variables_only: If True, the returned `ReconstructionModel` contains
-      all model variables as global variables. This can be useful for
-      baselines involving aggregating all variables.
-    name: (Optional) string to name the returned `tf.keras.Model`.
-
-  Returns:
-    `ReconstructionModel` tracking global and local variables for a recurrent
-    model.
-  """
+):
 
   if vocab_size < 0:
     raise ValueError('The vocab_size is expected to be greater than, or equal '
@@ -203,6 +178,7 @@ def create_recurrent_reconstruction_model(
 
   print("##### stackover flow model #####")
   model.summary()
+
   from tensorflow.keras.utils import plot_model
   plot_model(model, to_file=model.name+".png", show_shapes=True)
   print("##### stackover flow model #####")
@@ -217,8 +193,39 @@ def create_recurrent_reconstruction_model(
     global_layers.extend(local_layers)
     local_layers = []
 
-  return keras_utils.from_keras_model(
-      keras_model=model,
-      global_layers=global_layers,
-      local_layers=local_layers,
-      input_spec=input_spec)
+  return
+
+
+if __name__ =="__main__":
+    # train_clientdata, validation_clientdata, test_clientdata = (
+    # tff.simulation.datasets.stackoverflow.load_data())
+
+    # foo = tff.tf_computation(lambda x: x > 10, tf.int32)
+    # str(foo.type_signature) == '(int32 -> bool)'
+
+    # foo = tff.tf_computation(tf.add, (tf.int32, tf.int32))
+    # str(foo.type_signature) == '(<int32,int32> -> int32)'
+
+    # foo = tff.tf_computation(lambda: tf.constant(10))
+
+    # x = tf.Variable(0)
+    # y = tf.assign(x, 1)
+    # with tf.Session() as sess:
+    #     sess.run(tf.global_variables_initializer())
+    #     print(sess.run(x))
+    #     print(sess.run(y))
+    #     print(sess.run(x))
+
+    # create_recurrent_reconstruction_model()
+
+    path = '/root/.keras/datasets/stackoverflow.tar.bz2'
+    dir_path = os.path.dirname(path)
+    train_client_data = hdf5_client_data.HDF5ClientData(
+        os.path.join(dir_path, 'stackoverflow_train.h5'))
+    held_out_client_data = hdf5_client_data.HDF5ClientData(
+        os.path.join(dir_path, 'stackoverflow_held_out.h5'))
+    test_client_data = hdf5_client_data.HDF5ClientData(
+        os.path.join(dir_path, 'stackoverflow_test.h5'))
+    pass
+
+
