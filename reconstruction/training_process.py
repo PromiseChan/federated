@@ -436,13 +436,13 @@ def build_client_update_fn(
     # To be used to calculate batch loss for model updates.
     batch_loss_fn = loss_fn()
 
-    tf.config.experimental_run_functions_eagerly(True)
+    #tf.config.experimental_run_functions_eagerly(True)
     return client_update(model, metrics, batch_loss_fn, tf_dataset,
                          initial_model_weights, client_optimizer,
                          reconstruction_optimizer, round_num)
   #   **** client_delta_tf **** end
 
-  tf.config.experimental_run_functions_eagerly(True)
+  #tf.config.experimental_run_functions_eagerly(True)
   return client_delta_tf
 
 
